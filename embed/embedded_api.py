@@ -14,7 +14,6 @@ async def lifespan(app: FastAPI):
     # Shutdown actions
     print("🛑 Embedded FastAPI server is shutting down...")
 
-
 # Initialize FastAPI app
 app = FastAPI(title="Embedded Log Analysis", version="1.0", lifespan=lifespan)
 model = SentenceTransformer("sentence-transformers/all-mpnet-base-v2")

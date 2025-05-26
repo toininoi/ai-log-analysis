@@ -18,8 +18,8 @@
         "public_key": "your-local-public",
         "host": "http://localhost:3000"
     },
-    "claude_config": {
-        "claude_model": "claude-3-opus",
-        "claude_api_key": "sk-ant-test"
+    "openai_config": {
+        "api_key": "your-openai-key",
+        "model": "openai-model"
     }
 }

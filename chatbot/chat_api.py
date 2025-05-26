@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.concurrency import asynccontextmanager
 from pydantic import BaseModel
@@ -24,13 +25,13 @@ config = ConfigManager("configs.json")
 es_config = config.get_json("es_config")
 qdrant_db = config.get_json("qdrant_db")
 langfuse_keys = config.get_json("langfuse_keys")
-claude_config = config.get_json("claude_config")
+openai_config = config.get_json("openai_config")
 
 chatbot = ELKChatbot(
     es_config=es_config,
     embedding_model=config.get("embedding_model"),
     qdrant_db=qdrant_db,
-    claude_config=claude_config,
+    openai_config = openai_config,
     langfuse_keys=langfuse_keys
 )
 
@@ -40,16 +41,39 @@ class QueryRequest(BaseModel):
 
 
 @app.post("/chat")
-def analyze_logs(request: QueryRequest, x_api_key: str = Header(...)):
+def analyze_logs(
+    request: QueryRequest,
+    x_api_key: str = Header(...),
+    session_id: Optional[str] = Header(None)
+):
     """
     Endpoint to query the chatbot for log analysis.
+    Requires an API key and a session ID for context tracking.
     """
     if x_api_key != API_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
-        response = chatbot.process_query(request.question)
-        return {"query": request.question, "response": response}
+        # Optional: Retrieve session context
+        session = chatbot.get_session(session_id)
+        last_query = session.last_query if session else None
+
+        # Run query
+        response = chatbot.process_query(request.question, session_id)
+
+        # Update session with new state
+        chatbot.update_session(
+            session_id,
+            last_query=request.question,
+            last_response=response
+        )
+
+        return {
+            "query": request.question,
+            "last_query": last_query,
+            "response": response
+        }
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
