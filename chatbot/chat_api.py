@@ -1,5 +1,6 @@
 from typing import Optional
-from fastapi import FastAPI, HTTPException, Header
+import uuid
+from fastapi import FastAPI, HTTPException, Header, Response
 from fastapi.concurrency import asynccontextmanager
 from pydantic import BaseModel
 from chatbot import ELKChatbot
@@ -39,12 +40,16 @@ chatbot = ELKChatbot(
 class QueryRequest(BaseModel):
     question: str
 
+class FeedbackRequest(BaseModel):
+    feedback: str  # expected: "👍" or "👎"
+
 
 @app.post("/chat")
 def analyze_logs(
     request: QueryRequest,
-    x_api_key: str = Header(...),
-    session_id: Optional[str] = Header(None)
+    response: Response,
+    x_api_key: str = Header(..., alias="x-api-key"),
+    session_id: Optional[str] = Header(..., alias="session-id")
 ):
     """
     Endpoint to query the chatbot for log analysis.
@@ -53,6 +58,12 @@ def analyze_logs(
     if x_api_key != API_KEY:
         raise HTTPException(status_code=403, detail="Forbidden")
 
+    if not session_id:
+        session_id = str(uuid.uuid4())
+
+    
+    response.headers["session-id"] = session_id
+
     try:
         # Optional: Retrieve session context
         session = chatbot.get_session(session_id)
@@ -60,13 +71,6 @@ def analyze_logs(
 
         # Run query
         response = chatbot.process_query(request.question, session_id)
-
-        # Update session with new state
-        chatbot.update_session(
-            session_id,
-            last_query=request.question,
-            last_response=response
-        )
 
         return {
             "query": request.question,
@@ -78,6 +82,27 @@ def analyze_logs(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/feedback")
+def submit_feedback(
+    request: FeedbackRequest, 
+    response: Response,
+    x_api_key: str = Header(..., alias="x-api-key"),
+    session_id: str = Header(..., alias="session-id")
+):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    if not session_id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    response.headers["session-id"] = session_id
+
+    try:
+        result = chatbot.process_feedback(session_id, request.feedback)
+        return {"message": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 @app.get("/about")
 def root():
     return {"message": "ELK Log Analysis Chatbot API is running!"}

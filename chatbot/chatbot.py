@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from threading import Lock
 import traceback
 import re
@@ -7,6 +9,7 @@ import uuid
 from configuration import ELKLogRetriever, QDrantLogStore, LogEmbeddingProcessor, LangfuseLogger
 from models.chatgpt import ChatGPTAnalyzer
 from models.session import UserSession
+from rl_query_optimizer import RLQueryOptimizer
 
 
 class ELKChatbot:
@@ -14,14 +17,13 @@ class ELKChatbot:
         self.log_retriever = ELKLogRetriever(**es_config)
         self.logger = LangfuseLogger(**langfuse_keys)
 
-        # Initialize embedding processor and pass it to QDrant
         self.embedding_processor = LogEmbeddingProcessor(embedding_model)
         self.qdrant_store = QDrantLogStore(**qdrant_db)
         self.analyzer = ChatGPTAnalyzer(**openai_config)
 
-        # ✅ Store user-related context
         self.lock = Lock()
         self.user_sessions: dict[str, UserSession] = {}
+        self.rl_optimizer = RLQueryOptimizer()
 
     def update_session(self, session_id: str, **kwargs):
         with self.lock:
@@ -36,53 +38,60 @@ class ELKChatbot:
         return self.user_sessions.get(session_id)
 
     def extract_json_from_response(self, response_text):
-        """Extract a valid JSON object from GPT's response."""
         if "[ERROR]" in response_text or "quota" in response_text.lower():
             raise ValueError("❌ GPT call failed due to quota exhaustion or API error.")
-
-        # Try extracting from ```json fenced block
         match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
         if not match:
-            # Fallback: extract first {...} block
             match = re.search(r'(\{.*\})', response_text, re.DOTALL)
-
         if not match:
             raise ValueError("No JSON found in GPT response.")
-
-        json_text = match.group(1)
-
-        # 🔧 Remove JS-style comments like `// ...`
-        json_text = re.sub(r'//.*', '', json_text)
-
+        json_text = re.sub(r'//.*', '', match.group(1))
         try:
             return json.loads(json_text)
         except json.JSONDecodeError as e:
             print("❌ GPT raw response (not valid JSON):", response_text)
             raise ValueError("Failed to extract a valid JSON query from GPT's response.") from e
 
-
     def process_query(self, query, session_id):
         try:
-            # Step 1: Use GPT to determine if ES data is needed
+            strategy = self.rl_optimizer.choose_strategy()
+            strategy_prompt = self.rl_optimizer.get_prompt(strategy)
+
+            session = self.get_session(session_id)
+            last_query = session.last_query if session else None
+            last_response = session.last_response if session else None
+
             classification_prompt = f"""
-            Determine if the following query requires retrieving logs from Elasticsearch. 
-            If yes, return 'RETRIEVE'. If not, return 'RESPOND'.
-            Query: {query}
+            You are a strict classifier for a log analysis chatbot. Do not explain.
+
+            Your task is to decide if we need to fetch new logs from Elasticsearch (RETRIEVE),
+            or if we can answer the question using recent context or general knowledge (RESPOND).
+
+            Respond ONLY with either RETRIEVE or RESPOND. No punctuation, no reasoning.
+
+            Context:
+            - Last user query: {last_query}
+            - Last response: {last_response}
+            - New user query: {query}
             """
-            classification = self.analyzer.analyze([classification_prompt]).strip()
+
+            classification_raw = self.analyzer.analyze([classification_prompt]).strip()
+            classification = classification_raw.split()[-1].upper()
 
             if classification == "RESPOND":
                 response = self.analyzer.analyze(
                     [f"Provide a response based on previous conversation memory: {query}"]
                 ).strip()
+                self.update_session(
+                    session_id,
+                    last_query=query,
+                    last_response=response,
+                    last_strategy=strategy,
+                    updated_at=datetime.utcnow()
+                )
                 return response
 
-            # Step 2: Retrieve Last Identified User from Context
-            session = self.get_session(session_id)
-            last_user = session.last_query if session else None
-
-            # Step 3: Generate Elasticsearch Query using GPT
-            es_query_prompt = f"""
+            es_query_prompt = f"""{strategy_prompt}\n\n
             Given the Elasticsearch index mapping below:
             {json.dumps(self.log_retriever.mapping, indent=2)}
 
@@ -92,7 +101,7 @@ class ELKChatbot:
             Ensure:
             - Identify the most relevant fields from the index mapping dynamically.
             - If the query includes a user reference, include all possible user-related fields dynamically.
-            - If no user is explicitly mentioned, default to the last identified user: {last_user}.
+            - If no user is explicitly mentioned, default to the last identified prompt used as: {last_query}.
             - Use "term" instead of "match" for exact match fields (such as `keyword` or `long` type fields).
             - Use "term" for "loglevel.keyword" and ensure it is always uppercase.
             - Use "bool" query with "should" inside "must" for multiple user-related fields.
@@ -102,55 +111,72 @@ class ELKChatbot:
             - Ensure proper JSON format.
             - Respond only with valid JSON inside a JSON code block.
             """
+
+
+            # es_query_prompt = f"""{strategy_prompt}\n\nGiven the Elasticsearch index mapping below:
+            # {json.dumps(self.log_retriever.mapping, indent=2)}\n\nQuery: {query}"""
+
             es_query_response = self.analyzer.analyze([es_query_prompt])
             es_query = self.extract_json_from_response(es_query_response)
-
-            # Set no size limit (retrieve all relevant logs)
             es_query["size"] = 10000
 
-            # Validate ES Query Structure
             if "query" not in es_query or "bool" not in es_query["query"]:
                 raise ValueError("Invalid Elasticsearch query structure generated by GPT.")
 
-            # Step 4: Query Elasticsearch for Logs
             es_response = self.log_retriever.search_logs(es_query)
-
             if not es_response:
                 return "No relevant logs found."
 
             logs = es_response if isinstance(es_response, list) else es_response.get("hits", {}).get("hits", [])
             aggregations = es_response.get("aggregations", {}) if isinstance(es_response, dict) else {}
 
-            # Step 5: Store Logs in QDrant for Semantic Search
             embeddings = self.embedding_processor.embed_logs(logs)
             self.qdrant_store.store_logs(logs, embeddings)
 
-            # Step 6: Retrieve Similar Logs from QDrant
             query_embedding = self.embedding_processor.embed_query(query)
             similar_logs = self.qdrant_store.search_similar_logs(query_embedding, k=5)
 
-            # Step 7: Analyze and Summarize Logs using GPT
             analysis_prompt = f"""
+            You are a helpful and concise assistant.
+        
             Analyze the following logs and summarize key user activities:
-
-            {json.dumps(similar_logs, indent=2)}
-
+            {json.dumps(similar_logs, indent=2)}\n\n
             Rules:
-            1️⃣ Extract and summarize user actions based on logs, even if they are not explicitly listed in aggregations.
-            2️⃣ Identify **explicit user actions** such as LOGIN, NAVIGATION, FORM SUBMISSION, API CALLS.
-            3️⃣ Ignore system errors unless they are directly related to a user's action.
-            4️⃣ If logs contain similar repeated actions, summarize them instead of listing each individually.
-            5️⃣ Do **not** claim there is no activity if logs contain user actions.
-            6️⃣ Enhance the analysis using the similar logs retrieved from QDrant.
-            7️⃣ Answer the follow-up question in brief and professional:
-            {query}
-            """
+            1. Extract and summarize user actions.
+            2. Identify actions like LOGIN, NAVIGATION, API CALLS.
+            3. Ignore irrelevant system noise.
+            4. Summarize repeated actions.
+            5. Use retrieved logs to enhance the answer.
+            6. Final query: {query}\n\n
+
+            Respond directly and professionally to the user's question below.
+
+            🚫 DO NOT use phrases like:
+            - "Based on the previous conversation"
+            - "Based on the provided log"
+            - "According to the context"
+            - "From the earlier message"
+            - Or any sentence that begins with "Based on..."""
             analysis = self.analyzer.analyze([analysis_prompt]).strip()
 
             self.logger.log_interaction(query, analysis)
+            self.update_session(session_id, last_query=query, last_response=analysis, last_strategy=strategy, updated_at=datetime.utcnow())
             return analysis
 
         except Exception as e:
-            error_message = f"An error occurred: {str(e)}"
             print(traceback.format_exc())
-            return error_message
+            return f"An error occurred: {str(e)}"
+
+    def process_feedback(self, session_id, feedback: str):
+        session = self.get_session(session_id)
+        if not session:
+            return "Session not found."
+        self.rl_optimizer.log_feedback(
+            query=session.last_query,
+            strategy=session.last_strategy,
+            response=session.last_response,
+            es_response=True,
+            logs=[session.last_response],
+            user_feedback=feedback
+        )
+        return "Feedback received. Thank you!"
