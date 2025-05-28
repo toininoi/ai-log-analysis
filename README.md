@@ -3,6 +3,7 @@
 🚀 An AI-powered FastAPI backend that enables log inspection, vector storage, and AI conversational analysis — running locally with Docker (for Qdrant) and using **Langfuse Cloud** for observability!
 
 This project integrates:
+- **Prompt Engineering Techniques** for optimized query framing and response generation
 - **Elasticsearch** for searching logs
 - **Qdrant** for local vector storage
 - **Langfuse Cloud** for AI observability and prompt tracking
@@ -160,6 +161,7 @@ Example `configs.json`:
 
 ## 🧐 Features
 
+- ✍️ Prompt engineering to frame precise and contextual queries to LLMs
 - 🚀 FastAPI-based API server for chatbot interaction
 - 🔎 Elasticsearch for structured log search
 - 🧠 ChatGPT/Claude LLM-based reasoning and log insights
@@ -174,6 +176,7 @@ Example `configs.json`:
 
 ## ✨ Future Enhancements
 
+- 🧩 Modular prompt templates with contextual memory for better query optimization
 - 📁 Upload log files for contextual analysis
 - 🧠 Extend knowledge base with log structure definitions
 - 🔄 Real-time log ingestion (via WebSocket or polling)
