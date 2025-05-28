@@ -14,9 +14,9 @@
     },
     "embedding_model": "http://127.0.0.1:8080/embed",
     "langfuse_keys": {
-        "secret_key": "your-local-secret",
-        "public_key": "your-local-public",
-        "host": "http://localhost:3000"
+        "secret_key": "your-langfuse-secret",
+        "public_key": "your-langfuse-public",
+        "host": "https://cloud.langfuse.com"
     },
     "openai_config": {
         "api_key": "your-openai-key",

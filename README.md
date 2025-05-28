@@ -8,6 +8,8 @@ This project integrates:
 - **Langfuse Cloud** for AI observability and prompt tracking
 - **Sentence Transformers** for text embedding
 - **FastAPI** for serving APIs
+- **ChatGPT / Claude** for conversational analysis and reasoning
+- **Reinforcement Learning (RL)** for improving chatbot responses through feedback
 
 ✅ Only Qdrant runs locally — Langfuse Cloud is used for observability!
 
@@ -160,11 +162,25 @@ Example `configs.json`:
 
 - 🚀 FastAPI-based API server for chatbot interaction
 - 🔎 Elasticsearch for structured log search
+- 🧠 ChatGPT/Claude LLM-based reasoning and log insights
+- 🧪 RL-based feedback learning (classification/response)
 - 🧐 Sentence Transformers for text/vector embeddings
 - 🔥 Langfuse Cloud for prompt observability
 - 🗂️ Qdrant Vector DB for fast document retrieval
+- ⚙️ Configurable via environment and JSON
 - 🖥️ Minimal local services using Docker Compose
-- ⚡ Easy plug-and-play configuration (configs.json + ENV)
+
+---
+
+## ✨ Future Enhancements
+
+- 📁 Upload log files for contextual analysis
+- 🧠 Extend knowledge base with log structure definitions
+- 🔄 Real-time log ingestion (via WebSocket or polling)
+- 🤖 Multi-agent LLM support (OpenAI, Claude, Mistral)
+- 🛡️ JWT Auth and advanced access control
+- 📦 Helm/K8s and ECS deployment blueprints
+- ✅ Unit + integration test coverage
 
 ---
 
@@ -186,15 +202,4 @@ See the [LICENSE](LICENSE) file for full details.
 
 ---
 
-## ✨ Future Enhancements
-
-- Add WebSocket real-time log ingestion
-- Integrate OpenAI or Anthropic models for fallback
-- Support JWT authentication
-- Improve API validation and error handling
-- Build deployment templates (AWS ECS / Kubernetes)
-
----
-
 # 🚀 Happy Hacking & AI Log Adventures!
-
