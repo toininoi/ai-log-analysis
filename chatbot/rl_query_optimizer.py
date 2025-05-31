@@ -9,7 +9,8 @@ class RLQueryOptimizer:
         self.strategies = {
             "strict": "Use only exact keyword matches for fields and no fuzziness.",
             "relaxed": "Use match and fuzziness for partial matches.",
-            "hybrid": "Use keyword for user fields, but match for log message."
+            "hybrid": "Use keyword for user fields, but match for log message.",
+            "none": ""
         }
         self.reward_history = {k: 0 for k in self.strategies}
         self.count_history = {k: 1 for k in self.strategies}  # Avoid division by zero
@@ -60,3 +61,4 @@ class RLQueryOptimizer:
         }
         with open(self.feedback_file, "a") as f:
             f.write(json.dumps(entry) + "\n")
+        self._load_feedback()

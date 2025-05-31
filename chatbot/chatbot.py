@@ -125,6 +125,14 @@ class ELKChatbot:
 
             es_response = self.log_retriever.search_logs(es_query)
             if not es_response:
+                self.rl_optimizer.log_feedback(
+                    query=query,
+                    strategy=strategy,
+                    response=classification,
+                    es_response=False,
+                    logs=[],
+                    user_feedback="👎"
+                )
                 return "No relevant logs found."
 
             logs = es_response if isinstance(es_response, list) else es_response.get("hits", {}).get("hits", [])
