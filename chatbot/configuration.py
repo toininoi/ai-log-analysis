@@ -6,7 +6,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import PointStruct, Distance, VectorParams
 from models.langfuse import LangfusePromptManager
 from models.embeddings import ModelEmbeddings
-from models.anthropic import ChatAnthropic
 from langchain_core.documents import Document
 
 from elasticsearch import Elasticsearch, ConnectionError
@@ -187,21 +186,6 @@ class QDrantLogStore:
             }
             for hit in results
         ]
-
-class ClaudeAnalyzer:
-    def __init__(self, claude_model: str, claude_api_key: str):
-        self.claude = ChatAnthropic(model=claude_model, api_key=claude_api_key)
-
-    def analyze_logs(self, logs):
-        prompt = f"""
-        Analyze the following logs and provide:
-        - A summary of recurring issues
-        - Predicted potential failures
-        - Suggested fixes
-        Logs: {logs}
-        """
-        response = self.claude.invoke(prompt)
-        return response
 
 class LangfuseLogger:
     def __init__(self, secret_key: str, public_key: str, host: str):
