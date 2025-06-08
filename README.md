@@ -1,3 +1,4 @@
+![image](https://github.com/user-attachments/assets/60d529c1-a696-469e-b86e-9915dc83ef2a)
 # AI Log Analysis Project
 
 🚀 An AI-powered FastAPI backend that enables log inspection, vector storage, and AI conversational analysis — running locally with Docker (for Qdrant) and using **Langfuse Cloud** for observability!
